@@ -1,79 +1,14 @@
-# import argparse
-# import cv2
-# import sys
-# import time
-# import olympe
-# from olympe import Pdraw, PDRAW_YUV_FORMAT_I420, PDRAW_YUV_FORMAT_NV12, PdrawState
-
-
-# def yuv_frame_cb(yuv_frame):
-#     """
-#     This function will be called by Olympe for each decoded YUV frame.
-
-#         :type yuv_frame: olympe.VideoFrame
-#     """
-#     # the VideoFrame.info() dictionary contains some useful information
-#     # such as the video resolution
-#     info = yuv_frame.info()
-#     height, width = info["yuv"]["height"], info["yuv"]["width"]
-
-#     # yuv_frame.vmeta() returns a dictionary that contains additional
-#     # metadata from the drone (GPS coordinates, battery percentage, ...)
-
-#     # convert pdraw YUV flag to OpenCV YUV flag
-#     cv2_cvt_color_flag = {
-#         PDRAW_YUV_FORMAT_I420: cv2.COLOR_YUV2BGR_I420,
-#         PDRAW_YUV_FORMAT_NV12: cv2.COLOR_YUV2BGR_NV12,
-#     }[info["yuv"]["format"]]
-
-#     # yuv_frame.as_ndarray() is a 2D numpy array with the proper "shape"
-#     # i.e (3 * height / 2, width) because it's a YUV I420 or NV12 frame
-
-#     # Use OpenCV to convert the yuv frame to RGB
-#     cv2frame = cv2.cvtColor(yuv_frame.as_ndarray(), cv2_cvt_color_flag)
-
-
-#     face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-#     eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
-
-#     while(True):
-#         ret, frame = cv2frame.read()
-#         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-#         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-
-#         for (x,y,w,h) in faces:
-#             frame = cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
-#             roi_gray = gray[y:y+h, x:x+w]
-#             roi_color = frame[y:y+h, x:x+w]
-#             eyes = eye_cascade.detectMultiScale(roi_gray)
-#             for (ex,ey,ew,eh) in eyes:
-#                 cv2.rectangle(roi_color,(ex,ey),(ex+ew,ey+eh),(0,255,0),2)
-
-#         cv2.imshow("frame",frame)
-
-#         k =  cv2.waitKey(1) & 0xFF # キー操作取得。64ビットマシンの場合,& 0xFFが必要
-#         prop_val = cv2.getWindowProperty("frame", cv2.WND_PROP_ASPECT_RATIO) # ウィンドウが閉じられたかを検知する用
-
-# # qが押されるか、ウィンドウが閉じられたら終了
-#         if k == ord("q") or (prop_val < 0):
-#             break
-
-#     cv2frame.release()
-#     cv2.destroyAllWindows()
-
-
-# def main(drone):
-#     drone.set_streaming_callbacks(raw_cb=yuv_frame_cb)
-#     drone.start_video_streaming()
-#     time.sleep(10)
-#     drone.stop_video_streaming()
-   
 import argparse
 import cv2
 import sys
 import time
+import os
+
 from olympe import Pdraw, PDRAW_YUV_FORMAT_I420, PDRAW_YUV_FORMAT_NV12, PdrawState
+import numpy as np
+from olympe.messages.ardrone3.Piloting import TakeOff, Landing, moveTo, moveBy, Circle, PCMD
+from olympe.messages.move import extended_move_by,extended_move_to
+from olympe.messages.ardrone3.PilotingState import FlyingStateChanged, moveToChanged
 
 DRONE_IP = "192.168.42.1"
 
@@ -102,11 +37,47 @@ def yuv_frame_cb(yuv_frame):
     # i.e (3 * height / 2, width) because it's a YUV I420 or NV12 frame
 
     # Use OpenCV to convert the yuv frame to RGB
+    # img=yuv_frame.as_ndarray()
+    
     cv2frame = cv2.cvtColor(yuv_frame.as_ndarray(), cv2_cvt_color_flag)
-
+    img = cv2.cvtColor(cv2frame, cv2.COLOR_RGB2GRAY)
     # Use OpenCV to show this frame
-    cv2.imshow("Olympe Pdraw Example", cv2frame)
+    findFace(img)
+    cv2.imshow("Olympe Pdraw Example", img)
     cv2.waitKey(1)  # please OpenCV for 1 ms...
+
+fbRange=[6200,6800]
+pid=[0.4,0.4,0]
+w,h=360,240
+fb=0
+
+def findFace(img):
+    #shift+右クリックでパスのコピーwinとlinux
+    # face_cascade_path='C:\Users\manak\AppData\Local\Packages\CanonicalGroupLimited.Ubuntu18.04onWindows_79rhkp1fndgsc\LocalState\rootfs\home\manaki\awesome\mamoru\parrot2\haarcascade_frontalface_alt.xml'
+    face_cascade_path='haarcascade_frontalface_alt.xml'
+    
+    #カスケードファイルが存在するか
+    if os.path.isfile(face_cascade_path) is False:
+        print('ファイルが存在しない')
+        return 
+
+    faceCascade=cv2.CascadeClassifier(face_cascade_path)
+    # imgGray=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    imgGray=img
+    faces=faceCascade.detectMultiScale(imgGray,1.2,8)
+    myFaceListC=[]
+    myFaceListArea=[]
+    for (x,y,w,h) in faces:
+        cv2.rectangle(img,(x,y),(x+w,y+h),(0,0,225),2)
+        cx=x+w//2
+        cy=y+h//2
+        area=w*h
+        myFaceListC.append([cx,cy])
+        myFaceListArea.append(area)
+    if len(myFaceListArea) !=0:
+        i=myFaceListArea.index(max(myFaceListArea))
+        return img,[myFaceListC[i],myFaceListArea[i]]
+    else:return img,[[0,0],0]
 
 
 def main(argv):
@@ -142,9 +113,3 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-
-
-# if __name__ == "__main__":
-#     drone = olympe.Drone("192.168.42.1")
-#     drone.connection()
-#     main(drone)
